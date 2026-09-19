@@ -204,12 +204,12 @@ func main() {
 		co, err := f.Seek(-5, SEEK_CURRENT)
 		check(err)
 		fmt.Printf("Current offset: %d\n", co)
+
+		u2 := make([]byte, 8)
+		_, err = f.Read(u2)
+		check(err)
+		panic(fmt.Sprintf("Unknown bytes: %x\n", u2))
 	} else {
 		fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
 	}
-
-	u2 := make([]byte, 8)
-	_, err = f.Read(u2)
-	check(err)
-	fmt.Printf("Unknown bytes: %x\n", u2)
 }
