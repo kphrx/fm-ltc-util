@@ -57,6 +57,7 @@ func readHeader(f *os.File) (*LTCHeader, error) {
 }
 
 type LTCRecordsHeader struct {
+	Start       int64
 	Size        int64
 	EndPosition int64
 
@@ -88,6 +89,7 @@ func readRecordsHeader(f *os.File) (*LTCRecordsHeader, error) {
 	}
 
 	h := LTCRecordsHeader{
+		Start:       start,
 		Size:        size,
 		EndPosition: size + start,
 		LangName:    string(nb[:nn]),
@@ -157,7 +159,6 @@ func readRecords(f *os.File, eor int64) error {
 			fmt.Printf("Current offset: %d\n", lastPosition)
 
 			u2 := make([]byte, 8)
-			_, err = f.Read(u2)
 			if _, err := f.Read(u2); err != nil {
 				return err
 			}
@@ -184,6 +185,92 @@ func readRecords(f *os.File, eor int64) error {
 	fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
 
 	return nil
+}
+
+type LTCKey struct {
+	Flag byte
+	ID     uint32
+	Offset uint32
+}
+
+func getKeys15(f *os.File) ([]LTCKey, error) {
+	b := make([]byte, 4)
+	if _, err := f.Read(b); err != nil {
+		return nil, err
+	}
+
+	c := binary.LittleEndian.Uint32(b)
+
+	ks := make([]LTCKey, c)
+	for i := range c {
+		kb := make([]byte, 4)
+		if _, err := f.Read(kb); err != nil {
+			return nil, err
+		}
+
+		vb := make([]byte, 4)
+		if _, err := f.Read(vb); err != nil {
+			return nil, err
+		}
+
+		sb := make([]byte, 1)
+		if _, err := f.Read(sb); err != nil {
+			return nil, err
+		}
+
+		ks[i] = LTCKey{
+			Flag: sb[0],
+			ID: binary.LittleEndian.Uint32(kb[:4]),
+			Offset: binary.LittleEndian.Uint32(vb[:4]),
+		}
+	}
+
+	return ks, nil
+}
+
+func getKeys16(f *os.File) ([]LTCKey, error) {
+	b := make([]byte, 4)
+	if _, err := f.Read(b); err != nil {
+		return nil, err
+	}
+
+	c := binary.LittleEndian.Uint32(b)
+
+	ks := make([]LTCKey, c)
+	for i := range c {
+		kb := make([]byte, 4)
+		if _, err := f.Read(kb); err != nil {
+			return nil, err
+		}
+
+		vb := make([]byte, 4)
+		if _, err := f.Read(vb); err != nil {
+			return nil, err
+		}
+
+		ks[i] = LTCKey{
+			Flag: kb[3],
+			ID: binary.LittleEndian.Uint32(kb[:4]) & 0x00ffffff,
+			Offset: binary.LittleEndian.Uint32(vb[:4]),
+		}
+	}
+
+	return ks, nil
+}
+
+func getKeys(f *os.File, v uint16, eor int64) ([]LTCKey, error) {
+	if _, err := f.Seek(eor, SEEK_START); err != nil {
+		return nil, err
+	}
+
+	switch v {
+	case 15:
+		return getKeys15(f)
+	case 16:
+		return getKeys16(f)
+	default:
+		return nil, fmt.Errorf("unsupported LTC version: %d", v)
+	}
 }
 
 func check(e error) {
@@ -216,6 +303,22 @@ func main() {
 	check(err)
 	fmt.Printf("Unknown bytes:\t0x%x\n", u1)
 
-	err = readRecords(f, header.EndPosition)
+	// err = readRecords(f, header.EndPosition)
+	// check(err)
+
+	keys, err := getKeys(f, h.Version, header.EndPosition)
 	check(err)
+
+	l := len(keys)
+	key := keys[l-1]
+
+	_, err = f.Seek(int64(key.Offset) + header.Start, SEEK_START)
+	check(err)
+
+	record, err := readRecord(f)
+	check(err)
+	fmt.Printf("Last value: %s (%d)\n", record.Text, record.Prefix)
+
+	fmt.Printf("Key of %d:", l)
+	fmt.Printf("\tFlag: 0x%x, ID: %d (0x%x), Offset: %d (0x%x)\n", key.Flag, key.ID, key.ID, key.Offset, key.Offset)
 }
