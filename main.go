@@ -162,31 +162,38 @@ func main() {
 	u1 := make([]byte, 4)
 	_, err = f.Read(u1)
 	check(err)
-	fmt.Printf("Unknown bytes:\t%x\n", u1)
+	fmt.Printf("Unknown bytes:\t0x%x\n", u1)
 
 	stat := make(map[int16]int)
 	var (
-		lastPrefix int16
-		lastValue  string
-		last       uint = 0
-		d               = false
+		lastPrefix   int16
+		lastPosition int64
+		lastValue    string
+		last         uint = 0
 	)
 	for {
 		record, err := readRecord(f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			d = true
-			break
+			fmt.Printf("Last value count: %d\n", last)
+			fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
+			fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
+
+			_, err = f.Seek(lastPosition, SEEK_START)
+			check(err)
+			fmt.Printf("Current offset: %d\n", lastPosition)
+
+			u2 := make([]byte, 8)
+			_, err = f.Read(u2)
+			check(err)
+			panic(fmt.Sprintf("Unknown bytes: 0x%x\n", u2))
 		}
 
 		co, err := f.Seek(0, SEEK_CURRENT)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			d = true
-			break
-		}
+		check(err)
 
 		stat[record.Prefix] += 1
+		lastPosition = co
 		lastPrefix = record.Prefix
 		lastValue = record.Text
 		last += 1
@@ -197,19 +204,5 @@ func main() {
 		}
 	}
 
-	if d {
-		fmt.Printf("Last value count: %d\n", last)
-		fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
-
-		co, err := f.Seek(-5, SEEK_CURRENT)
-		check(err)
-		fmt.Printf("Current offset: %d\n", co)
-
-		u2 := make([]byte, 8)
-		_, err = f.Read(u2)
-		check(err)
-		panic(fmt.Sprintf("Unknown bytes: %x\n", u2))
-	} else {
-		fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
-	}
+	fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
 }
