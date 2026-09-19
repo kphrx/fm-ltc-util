@@ -27,12 +27,6 @@ const (
 	SEEK_END     = 2
 )
 
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
-
 type LTCHeader struct {
 	ID      uint16
 	Format  string
@@ -141,6 +135,63 @@ func readRecord(f *os.File) (*LTCRecord, error) {
 	return &r, nil
 }
 
+func readRecords(f *os.File, eor int64) error {
+	stat := make(map[int16]int)
+	var (
+		lastPrefix   int16
+		lastPosition int64
+		lastValue    string
+		last         uint = 0
+	)
+
+	for {
+		record, err := readRecord(f)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			fmt.Printf("Last value count: %d\n", last)
+			fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
+
+			if _, err := f.Seek(lastPosition, SEEK_START); err != nil {
+				return err
+			}
+			fmt.Printf("Current offset: %d\n", lastPosition)
+
+			u2 := make([]byte, 8)
+			_, err = f.Read(u2)
+			if _, err := f.Read(u2); err != nil {
+				return err
+			}
+			return fmt.Errorf("Unknown bytes: 0x%x\n", u2)
+		}
+
+		co, err := f.Seek(0, SEEK_CURRENT)
+		if err != nil {
+			return err
+		}
+
+		stat[record.Prefix] += 1
+		lastPosition = co
+		lastPrefix = record.Prefix
+		lastValue = record.Text
+		last += 1
+
+		if co >= eor {
+			fmt.Printf("Value prefix stats: %v\n", stat)
+			break
+		}
+	}
+
+	fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
+
+	return nil
+}
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
 func main() {
 	opts := optParse(os.Args)
 
@@ -165,45 +216,6 @@ func main() {
 	check(err)
 	fmt.Printf("Unknown bytes:\t0x%x\n", u1)
 
-	stat := make(map[int16]int)
-	var (
-		lastPrefix   int16
-		lastPosition int64
-		lastValue    string
-		last         uint = 0
-	)
-	for {
-		record, err := readRecord(f)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			fmt.Printf("Last value count: %d\n", last)
-			fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
-			fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
-
-			_, err = f.Seek(lastPosition, SEEK_START)
-			check(err)
-			fmt.Printf("Current offset: %d\n", lastPosition)
-
-			u2 := make([]byte, 8)
-			_, err = f.Read(u2)
-			check(err)
-			panic(fmt.Sprintf("Unknown bytes: 0x%x\n", u2))
-		}
-
-		co, err := f.Seek(0, SEEK_CURRENT)
-		check(err)
-
-		stat[record.Prefix] += 1
-		lastPosition = co
-		lastPrefix = record.Prefix
-		lastValue = record.Text
-		last += 1
-
-		if co >= header.EndPosition {
-			fmt.Printf("Value prefix stats: %v\n", stat)
-			break
-		}
-	}
-
-	fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
+	err = readRecords(f, header.EndPosition)
+	check(err)
 }
