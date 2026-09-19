@@ -145,6 +145,7 @@ func main() {
 	opts := optParse(os.Args)
 
 	f, err := os.Open(opts.InputFile)
+	check(err)
 	defer f.Close()
 
 	h, err := readHeader(f)
