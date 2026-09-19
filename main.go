@@ -9,7 +9,6 @@ import (
 
 type Options struct {
 	InputFile string
-	Count     uint
 }
 
 func optParse(args []string) *Options {
@@ -17,7 +16,6 @@ func optParse(args []string) *Options {
 
 	flagSet := flag.NewFlagSet("fm-ltc-util", flag.ExitOnError)
 	flagSet.StringVar(&opts.InputFile, "input-file", "", "input file")
-	flagSet.UintVar(&opts.Count, "count", 0, "read values count")
 	flagSet.Parse(os.Args[1:])
 
 	return &opts
@@ -56,22 +54,22 @@ func readHeader(f *os.File) (*LTCHeader, error) {
 	}
 
 	h := LTCHeader{
-		ID:           binary.LittleEndian.Uint16(ib[:2]),
-		Format:       string(fb[:4]),
-		Version:      binary.LittleEndian.Uint16(vb[:2]),
+		ID:      binary.LittleEndian.Uint16(ib[:2]),
+		Format:  string(fb[:4]),
+		Version: binary.LittleEndian.Uint16(vb[:2]),
 	}
 
 	return &h, nil
 }
 
-type LTCBodyHeader struct {
-	Size  int64
-	EOB int64
+type LTCRecordsHeader struct {
+	Size        int64
+	EndPosition int64
 
 	LangName string
 }
 
-func readBodyHeader(f *os.File) (*LTCBodyHeader, error) {
+func readRecordsHeader(f *os.File) (*LTCRecordsHeader, error) {
 	start, err := f.Seek(0, SEEK_CURRENT)
 	if err != nil {
 		return nil, err
@@ -95,10 +93,10 @@ func readBodyHeader(f *os.File) (*LTCBodyHeader, error) {
 		return nil, err
 	}
 
-	h := LTCBodyHeader{
-		Size:     size,
-		EOB:    size + start,
-		LangName: string(nb[:nn]),
+	h := LTCRecordsHeader{
+		Size:        size,
+		EndPosition: size + start,
+		LangName:    string(nb[:nn]),
 	}
 
 	return &h, nil
@@ -155,10 +153,10 @@ func main() {
 	fmt.Printf("Format:\t\t%s\n", h.Format)
 	fmt.Printf("Version:\t%d\n", h.Version)
 
-	header, err := readBodyHeader(f)
+	header, err := readRecordsHeader(f)
 	check(err)
 	fmt.Printf("Size:\t\t%d\n", header.Size)
-	fmt.Printf("EndOfBody:\t%d\n", header.EOB)
+	fmt.Printf("EndPosition:\t%d\n", header.EndPosition)
 	fmt.Printf("LangName:\t%s\n", header.LangName)
 
 	u1 := make([]byte, 4)
@@ -173,7 +171,7 @@ func main() {
 		last       uint = 0
 		d               = false
 	)
-	for range opts.Count {
+	for {
 		record, err := readRecord(f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -193,22 +191,22 @@ func main() {
 		lastValue = record.Text
 		last += 1
 
-		if header.EOB == co {
+		if co >= header.EndPosition {
 			fmt.Printf("Value prefix stats: %v\n", stat)
 			break
 		}
 	}
 
-	if !d {
+	if d {
+		fmt.Printf("Last value count: %d\n", last)
+		fmt.Printf("Last value prefix: %d\n\n", lastPrefix)
+
+		co, err := f.Seek(-5, SEEK_CURRENT)
+		check(err)
+		fmt.Printf("Current offset: %d\n", co)
+	} else {
 		fmt.Printf("Last value of %d: %s (%d)\n", last, lastValue, lastPrefix)
-		return
 	}
-
-	fmt.Printf("Last value count: %d\n\n", last)
-
-	co, err := f.Seek(-5, SEEK_CURRENT)
-	check(err)
-	fmt.Printf("Current offset: %d\n", co)
 
 	u2 := make([]byte, 8)
 	_, err = f.Read(u2)
